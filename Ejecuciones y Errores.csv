@@ -1,0 +1,16 @@
+﻿ID Ejecución,Costo IA estimado,Duración,Estado de ejecución,Etapa del workflow,Fecha de ejecución,Fecha de resolución,Mensaje de error,Nodo,Número de reintentos,Reseña,Reseñas,Tokens de entrada,Tokens de salida,Tokens totales
+ERR-86,,,Error,Base de datos,11 de agosto de 2026 17:32,,Error de consulta o escritura en Notion tras 3 reintentos.,Notion (Base de datos),3,,,,,
+ERR-86,,,Error,RAG,11 de agosto de 2026 17:32,,Error al recuperar o consolidar el contexto RAG tras 3 reintentos.,Base de Conocimiento / Consolidar,3,,,,,
+ERR-87,,,Error,Base de datos,11 de agosto de 2026 17:36,,Error de consulta o escritura en Notion tras 3 reintentos.,Notion (Base de datos),3,,,,,
+ERR-87,,,Error,RAG,11 de agosto de 2026 17:36,,Error al recuperar o consolidar el contexto RAG tras 3 reintentos.,Base de Conocimiento / Consolidar,3,,,,,
+EXE-90,0,0,Exitosa,Gmail,11 de agosto de 2026 17:48,,,16. Enviar Respuesta al Huésped,0,RES-1786481241401-1623 (https://app.notion.com/p/RES-1786481241401-1623-3b904c2dd65b8132803bc5012e5baa92?pvs=21),,0,0,0
+EXE-91,0,0,Exitosa,Gmail,12 de agosto de 2026 16:34,,,16. Enviar Respuesta al Huésped,0,RES-1786563220372-4628 (https://app.notion.com/p/RES-1786563220372-4628-3ba04c2dd65b81888b46c740ea9ec1d5?pvs=21),,0,0,0
+EXE-92,0,0,Exitosa,Gmail,12 de agosto de 2026 16:37,,,16. Enviar Respuesta al Huésped,0,RES-1786563392776-1232 (https://app.notion.com/p/RES-1786563392776-1232-3ba04c2dd65b811480fee6d7f726cbac?pvs=21),,0,0,0
+EXE-93,0,0,Exitosa,Gmail,12 de agosto de 2026 16:43,,,16. Enviar Respuesta al Huésped,0,RES-1786563707250-9752 (https://app.notion.com/p/RES-1786563707250-9752-3ba04c2dd65b816db56ec6e5021eeb0a?pvs=21),,0,0,0
+EXE-94,0,0,Exitosa,Gmail,12 de agosto de 2026 16:46,,,16. Enviar Respuesta al Huésped,0,RES-1786563842817-6526 (https://app.notion.com/p/RES-1786563842817-6526-3ba04c2dd65b817484f7d6a01b891562?pvs=21),,0,0,0
+EXE-95,0,0,Exitosa,Gmail,12 de agosto de 2026 16:49,,,16. Enviar Respuesta al Huésped,0,RES-1786564098732-7111 (https://app.notion.com/p/RES-1786564098732-7111-3ba04c2dd65b817bbcd0c5e8c0f5e2f8?pvs=21),,0,0,0
+EXE-96,0,0,Exitosa,Gmail,12 de agosto de 2026 16:51,,,16. Enviar Respuesta al Huésped,0,RES-1786564192869-3184 (https://app.notion.com/p/RES-1786564192869-3184-3ba04c2dd65b81d9a788c324a9641255?pvs=21),,0,0,0
+EXE-98,0,0,Exitosa,Gmail,12 de agosto de 2026 17:01,,,16. Enviar Respuesta al Huésped,0,RES-1786564835105-3582 (https://app.notion.com/p/RES-1786564835105-3582-3ba04c2dd65b81c29a35fad8128f760a?pvs=21),,0,0,0
+EXE-99,0,0,Exitosa,Gmail,12 de agosto de 2026 17:03,,,16. Enviar Respuesta al Huésped,0,RES-1786564914886-6411 (https://app.notion.com/p/RES-1786564914886-6411-3ba04c2dd65b812f9932d2c8942ce75e?pvs=21),,0,0,0
+EXE-100,0,0,Exitosa,Gmail,12 de agosto de 2026 17:05,,,16. Enviar Respuesta al Huésped,0,RES-1786565004032-6129 (https://app.notion.com/p/RES-1786565004032-6129-3ba04c2dd65b8133ab64c27801d35fac?pvs=21),,0,0,0
+EXE-101,0,0,Exitosa,Gmail,12 de agosto de 2026 17:07,,,16. Enviar Respuesta al Huésped,0,RES-1786565144733-9168 (https://app.notion.com/p/RES-1786565144733-9168-3ba04c2dd65b81239005e425a5cde01d?pvs=21),,0,0,0

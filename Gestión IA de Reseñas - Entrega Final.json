@@ -1,0 +1,1473 @@
+{
+  "name": "Gestión IA de Reseñas - Entrega Final",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tally-resenas-dolores",
+        "options": {}
+      },
+      "id": "0194c1c9-4a53-4033-8177-564e468a5fd4",
+      "name": "1. Webhook Tally",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        1056
+      ],
+      "webhookId": "9dab4845-5c3d-45bc-8472-6762d7b2e1bf"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// --- Extraer payload de Tally (soporta formato Tally y formato plano) ---\nconst item = $input.first().json || {};\nconst body = item.body || item;\n\nfunction norm(s) { return (s === undefined || s === null) ? '' : String(s).trim(); }\n\nlet nombre = '', email = '', fecha_estadia = '', calificacion = '', positivos = '', mejorar = '';\n\nif (body.data && Array.isArray(body.data.fields)) {\n  // Formato oficial Tally: body.data.fields[]\n  for (const f of body.data.fields) {\n    const label = (f.label || '').toLowerCase();\n    const type = (f.type || '').toUpperCase();\n    let value = f.value;\n    // Multiple choice / dropdown con options -> resolver texto\n    if (Array.isArray(value) && Array.isArray(f.options)) {\n      const map = {};\n      for (const o of f.options) { map[o.id] = o.text; }\n      value = value.map(v => map[v] || v).join(', ');\n    } else if (Array.isArray(value)) {\n      value = value.join(', ');\n    }\n    if (label.includes('nombre')) nombre = norm(value);\n    else if (type === 'INPUT_EMAIL' || label.includes('email') || label.includes('correo')) email = norm(value);\n    else if (type === 'INPUT_DATE' || label.includes('fecha')) fecha_estadia = norm(value);\n    else if (type === 'RATING' || label.includes('calific')) calificacion = norm(value);\n    else if (label.includes('disfrut') || label.includes('más') || label.includes('mas')) positivos = norm(value);\n    else if (label.includes('mejorar') || label.includes('mejora')) mejorar = norm(value);\n  }\n} else {\n  // Formato plano (pruebas / integraciones simples)\n  nombre = norm(body.nombre || body.name);\n  email = norm(body.email);\n  fecha_estadia = norm(body.fecha_estadia || body.fecha || body.stayDate);\n  calificacion = norm(body.calificacion || body.rating);\n  positivos = norm(body.aspectos_positivos || body.positivos);\n  mejorar = norm(body.aspectos_mejorar || body.mejorar);\n}\n\n// --- Validación de obligatorios ---\nconst faltantes = [];\nif (!nombre) faltantes.push('nombre del huésped');\nif (!email) faltantes.push('email');\nif (!fecha_estadia) faltantes.push('fecha de estadía');\nif (!calificacion) faltantes.push('calificación');\nif (!positivos) faltantes.push('aspectos positivos');\n\nconst valido = faltantes.length === 0;\nconst error_mensaje = valido ? '' : ('Faltan datos obligatorios: ' + faltantes.join(', ') + '.');\n\n// --- Normalización ---\nconst calif_num = Number(String(calificacion).replace(/[^0-9.]/g, '')) || 0;\nconst mejorar_final = mejorar || 'No se indicaron aspectos a mejorar.';\nconst resena_original =\n  'Aspectos positivos: ' + (positivos || '') + '\\n' +\n  'Aspectos a mejorar: ' + mejorar_final;\n\nconst idea_semilla = 'Redactar una respuesta breve, cercana y profesional para la reseña del huésped, adaptando el tono y el contenido según la calificación recibida y la experiencia expresada. Utiliza exclusivamente la información contenida en la reseña del huésped y en la Base de Conocimiento del hotel. No inventes información ni respondas preguntas que no puedan justificarse con dichas fuentes.';\n\nconst stamp = Date.now();\nconst id_resena = 'RES-' + stamp + '-' + Math.floor(Math.random() * 10000);\n\nreturn [{\n  json: {\n    valido,\n    error_mensaje,\n    nombre,\n    email,\n    fecha_estadia,\n    calificacion: calif_num,\n    aspectos_positivos: positivos,\n    aspectos_mejorar: mejorar_final,\n    id_resena,\n    resena_original,\n    idea_semilla,\n  },\n}];\n"
+      },
+      "id": "200f4c55-d9b2-4a8e-a728-a3d7b3ec5b6a",
+      "name": "2. Validar y Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "70068f72-969b-4a03-b063-26a2015e7164",
+      "name": "3. ¿Datos Válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "98197f56-ae73-4c7a-92a5-906888bfab38",
+          "mode": "list",
+          "cachedResultName": "Huéspedes",
+          "cachedResultUrl": "https://app.notion.com/p/98197f56ae734c7a92a5906888bfab38"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Email|email",
+              "type": "email",
+              "condition": "equals",
+              "emailValue": "={{ $json.email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11d7bfaf-1802-4b7a-a02c-7ac64d041896",
+      "name": "4. Buscar Huésped por Email",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        992
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "etapa",
+              "value": "Base de datos",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "nodo",
+              "value": "Notion (Base de datos)",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "mensaje",
+              "value": "Error de consulta o escritura en Notion tras 3 reintentos.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4e73b229-6c4c-4cf8-a02f-357a9279f4b2",
+      "name": "E. Etapa Base de Datos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3840,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "etapa",
+              "value": "Validación",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "nodo",
+              "value": "2. Validar y Normalizar",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "mensaje",
+              "value": "={{ $json.error_mensaje }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6e6a1e2d-77e3-44c8-98d8-4c09cd989470",
+      "name": "E. Etapa Validación",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        672,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "465a3305-5ddf-438f-b436-fd5a0a1d1ed0",
+      "name": "5. ¿Huésped Existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "guest_page_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "85da854a-0786-444b-b8bf-e2b792f39252",
+      "name": "6a. Usar Huésped Existente",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1120,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "98197f56-ae73-4c7a-92a5-906888bfab38",
+          "mode": "list",
+          "cachedResultName": "Huéspedes",
+          "cachedResultUrl": "https://app.notion.com/p/98197f56ae734c7a92a5906888bfab38"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Nombre del huésped|title",
+              "type": "title",
+              "title": "={{ $('2. Validar y Normalizar').first().json.nombre }}"
+            },
+            {
+              "key": "Email|email",
+              "type": "email",
+              "emailValue": "={{ $('2. Validar y Normalizar').first().json.email }}"
+            },
+            {
+              "key": "ID Huésped|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ 'H-' + $('2. Validar y Normalizar').first().json.email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2dfef37a-c017-46a0-a1d1-9a40e5ac6286",
+      "name": "6b. Crear Huésped",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1056,
+        1424
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "guest_page_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1839219-4ba0-4805-9957-809e4a72ef80",
+      "name": "6c. ID Huésped Nuevo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1328,
+        1296
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "7f47f8af-19d6-4010-a85e-0c824afd0fe3",
+          "mode": "list",
+          "cachedResultName": "Reseñas",
+          "cachedResultUrl": "https://app.notion.com/p/7f47f8af19d64010a85e0c824afd0fe3"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "ID Reseña|title",
+              "type": "title",
+              "title": "={{ $('2. Validar y Normalizar').first().json.id_resena }}"
+            },
+            {
+              "key": "Huésped|relation",
+              "type": "relation",
+              "relationValue": [
+                "={{ $json.guest_page_id }}"
+              ]
+            },
+            {
+              "key": "Calificación|number",
+              "type": "number",
+              "numberValue": "={{ $('2. Validar y Normalizar').first().json.calificacion }}"
+            },
+            {
+              "key": "Reseña original|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $('2. Validar y Normalizar').first().json.resena_original }}"
+            },
+            {
+              "key": "Idea Semilla|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $('2. Validar y Normalizar').first().json.idea_semilla }}"
+            },
+            {
+              "key": "Fecha de estadía|date",
+              "type": "date",
+              "includeTime": false,
+              "date": "={{ $('2. Validar y Normalizar').first().json.fecha_estadia }}"
+            },
+            {
+              "key": "Estado|status",
+              "type": "status",
+              "statusValue": "Procesando IA"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "022d3ced-ce69-4dbe-92c0-671c2671c629",
+      "name": "7. Crear Reseña",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1392,
+        784
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "3b104c2d-d65b-80cf-86ac-f5a047f99038",
+          "mode": "list",
+          "cachedResultName": " Base de Conocimiento",
+          "cachedResultUrl": "https://app.notion.com/p/3b104c2dd65b80cf86acf5a047f99038"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": []
+        },
+        "options": {}
+      },
+      "id": "cac47858-2ffd-4607-bff6-01519a258e19",
+      "name": "8. Consultar Base de Conocimiento",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        672
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "etapa",
+              "value": "RAG",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "nodo",
+              "value": "Base de Conocimiento / Consolidar",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "mensaje",
+              "value": "Error al recuperar o consolidar el contexto RAG tras 3 reintentos.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "21f73b84-1885-41d2-883b-cdfacf2e6e29",
+      "name": "E. Etapa RAG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2144,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst kb = $input.all();\nlet ctx = '';\nfor (const row of kb) {\n  const j = row.json || {};\n  const titulo = j['property_titulo'] || j['Titulo'] || j['Título'];\n  const categoria = j['property_categoria'] || j['Categoria'] || j['Categoría'];\n  const contenido = j['property_contenido'] || j['Contenido'];\n  if (!titulo && !contenido) continue;\n  ctx += '### ' + (titulo || 'Sin título') + ' (Categoría: ' + (categoria || 'N/D') + ')\\n';\n  ctx += (contenido || '') + '\\n\\n';\n}\nif (!ctx.trim()) {\n  ctx = 'No hay información disponible en la Base de Conocimiento.';\n}\n\nconst norm = $('2. Validar y Normalizar').first().json;\nconst review = $('7. Crear Reseña').first().json;\n\nreturn [{\n  json: {\n    nombre: norm.nombre,\n    email: norm.email,\n    calificacion: norm.calificacion,\n    resena_original: norm.resena_original,\n    idea_semilla: norm.idea_semilla,\n    contexto_rag: ctx.trim(),\n    resena_page_id: review.id,\n  },\n}];\n"
+      },
+      "id": "610f0cd2-64f9-44af-b8e1-8553800e56f7",
+      "name": "9. Consolidar Contexto RAG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        656
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analiza la siguiente reseña de un huésped y redacta un borrador de respuesta.\\n\\nNOMBRE DEL HUÉSPED: {{ $json.nombre }}\\nCALIFICACIÓN (1-5): {{ $json.calificacion }}\\nRESEÑA ORIGINAL:\\n{{ $json.resena_original }}\\n\\nIDEA SEMILLA (instrucción de redacción):\\n{{ $json.idea_semilla }}\\n\\nCONTEXTO / BASE DE CONOCIMIENTO DEL HOTEL (única fuente autorizada):\\n{{ $json.contexto_rag }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres el asistente de atención al huésped del hotel Days Inn Parque Termal Dolores. Tu tarea es: 1) analizar el sentimiento (Positivo | Neutral | Negativo), 2) determinar la urgencia (Baja | Media | Alta), 3) generar un borrador de respuesta breve, cercano y profesional. REGLAS ESTRICTAS: Básate EXCLUSIVAMENTE en la reseña del huésped y en la Base de Conocimiento proporcionada. No inventes servicios, políticas, horarios, promociones ni información del hotel que no aparezca en esas fuentes. No ejecutes ninguna comunicación tú mismo: el borrador SIEMPRE requiere revisión humana. Devuelve únicamente la salida estructurada en el formato JSON solicitado con \"requiere_revision\": true.",
+          "enableStreaming": false
+        }
+      },
+      "id": "ca9bcb3a-7e7a-46ab-85b7-32bc8a91433f",
+      "name": "10. AI Agent - Analizar y Redactar",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2096,
+        640
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "146bc99d-b332-49a4-b33c-ee47e69150ae",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        2096,
+        864
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "C3jdUsiino3MINxP",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"sentimiento\":\"Positivo\",\"urgencia\":\"Baja\",\"borrador_respuesta\":\"Texto de respuesta al huésped.\",\"requiere_revision\":true,\"motivo_revision\":\"Breve explicación.\"}"
+      },
+      "id": "fe00bd70-e32f-40fb-b29e-a5cb66e3b211",
+      "name": "Parser Salida IA",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2240,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "etapa",
+              "value": "Inteligencia Artificial",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "nodo",
+              "value": "10. AI Agent - Analizar y Redactar",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "mensaje",
+              "value": "Error del modelo de IA (Gemini) tras 3 reintentos.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e42530a5-c38c-4dfd-a10e-2bb4f200271d",
+      "name": "E. Etapa IA",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2608,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('9. Consolidar Contexto RAG').first().json.resena_page_id }}"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Borrador IA|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $json.output.borrador_respuesta }}"
+            },
+            {
+              "key": "Sentimiento IA|select",
+              "type": "select",
+              "selectValue": "={{ $json.output.sentimiento }}"
+            },
+            {
+              "key": "Urgencia IA|select",
+              "type": "select",
+              "selectValue": "={{ $json.output.urgencia }}"
+            },
+            {
+              "key": "Requiere Revision|checkbox",
+              "type": "checkbox",
+              "checkboxValue": true
+            },
+            {
+              "key": "Aprobado|checkbox",
+              "type": "checkbox"
+            },
+            {
+              "key": "Estado|status",
+              "type": "status",
+              "statusValue": "Pendiente de aprobación"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "58016563-20b9-4afc-84eb-0cfe2610dce1",
+      "name": "11. Guardar Análisis y Borrador",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        2448,
+        512
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "collavinithiago@gmail.com",
+        "subject": "=[Revisión reseña] {{ $('2. Validar y Normalizar').first().json.nombre }} - {{ $('2. Validar y Normalizar').first().json.calificacion }}/5",
+        "message": "=<h3>Nueva reseña pendiente de aprobación</h3><p><b>Huésped:</b> {{ $('2. Validar y Normalizar').first().json.nombre }}</p><p><b>Calificación:</b> {{ $('2. Validar y Normalizar').first().json.calificacion }}/5</p><p><b>Sentimiento IA:</b> {{ $('10. AI Agent - Analizar y Redactar').first().json.output.sentimiento }}</p><p><b>Urgencia IA:</b> {{ $('10. AI Agent - Analizar y Redactar').first().json.output.urgencia }}</p><p><b>Reseña original:</b><br>{{ $('2. Validar y Normalizar').first().json.resena_original }}</p><p><b>Borrador generado:</b><br>{{ $('10. AI Agent - Analizar y Redactar').first().json.output.borrador_respuesta }}</p><p><b>Revisar en Notion:</b> <a href=\"{{ $('7. Crear Reseña').first().json.url }}\">Abrir reseña</a></p><p>Para aprobar, marca el checkbox <b>Aprobado</b> en el registro de Notion.</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "22019488-f290-4567-8749-f8efb5e30128",
+      "name": "12. Notificar Revisor Interno",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2672,
+        384
+      ],
+      "webhookId": "35ab5f39-a5a9-4b40-98ae-1a13c383c517",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ExP9xBW7edU4RvFn",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "etapa",
+              "value": "Gmail",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "nodo",
+              "value": "Gmail (envío)",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "mensaje",
+              "value": "Error al enviar correo mediante Gmail tras 3 reintentos.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "508ffd16-3f1b-40e3-8f52-af49bc3955f0",
+      "name": "E. Etapa Gmail",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3856,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "minutes"
+      },
+      "id": "abf6fb03-6dc4-4729-bdcd-c5f89aae3938",
+      "name": "13. Esperar Aprobación",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2896,
+        272
+      ],
+      "webhookId": "8b262701-46e3-4eaf-8ed7-3101d881538c"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "get",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('9. Consolidar Contexto RAG').first().json.resena_page_id }}"
+        }
+      },
+      "id": "841ffcf4-0d72-4205-8ab0-6c3192b04c33",
+      "name": "14. Consultar Estado Reseña",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        272
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.property_aprobado }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "707a9e52-cd99-4c87-b976-7d8e3473f4b5",
+      "name": "15. ¿Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3344,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('2. Validar y Normalizar').first().json.email }}",
+        "subject": "=Gracias por tu reseña - Days Inn Parque Termal Dolores",
+        "message": "={{ $('10. AI Agent - Analizar y Redactar').first().json.output.borrador_respuesta }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "588dc057-2a2b-47bc-988e-6b431e52741d",
+      "name": "16. Enviar Respuesta al Huésped",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3600,
+        144
+      ],
+      "webhookId": "191d1567-4c72-4cda-98de-018aa637fc36",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ExP9xBW7edU4RvFn",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $runIndex }}",
+              "rightValue": 12,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a89ae90f-a0f7-4cc5-8695-96ebdb5992f5",
+      "name": "17. ¿Límite de Chequeos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3632,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "etapa",
+              "value": "HITL",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "nodo",
+              "value": "17. ¿Límite de Chequeos?",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "mensaje",
+              "value": "Se alcanzó el límite de chequeos de aprobación sin recibir aprobación humana. Proceso detenido sin contactar al huésped.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ea0020f8-6a30-4e92-9c80-d095f0566c8f",
+      "name": "E. Etapa HITL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3936,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('9. Consolidar Contexto RAG').first().json.resena_page_id }}"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Respuesta final|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $('10. AI Agent - Analizar y Redactar').first().json.output.borrador_respuesta }}"
+            },
+            {
+              "key": "Gmail Thread ID|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $('16. Enviar Respuesta al Huésped').first().json.threadId }}"
+            },
+            {
+              "key": "Fecha de envío|date",
+              "type": "date",
+              "date": "={{ $now.toISO() }}"
+            },
+            {
+              "key": "Estado|status",
+              "type": "status",
+              "statusValue": "Enviado"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c8e5213d-0389-4d32-8a65-dc43bcd3cb67",
+      "name": "18. Guardar Envío",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        3856,
+        128
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "305cd36d-966e-4f61-ab70-78f2534a82d6",
+          "mode": "list",
+          "cachedResultName": "Ejecuciones y Errores",
+          "cachedResultUrl": "https://app.notion.com/p/305cd36d966e4f61ab7078f2534a82d6"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "ID Ejecución|title",
+              "type": "title",
+              "title": "={{ 'EXE-' + $execution.id }}"
+            },
+            {
+              "key": "Reseña|relation",
+              "type": "relation",
+              "relationValue": [
+                "={{ $('9. Consolidar Contexto RAG').first().json.resena_page_id }}"
+              ]
+            },
+            {
+              "key": "Estado de ejecución|select",
+              "type": "select",
+              "selectValue": "Exitosa"
+            },
+            {
+              "key": "Etapa del workflow|select",
+              "type": "select",
+              "selectValue": "Gmail"
+            },
+            {
+              "key": "Nodo|rich_text",
+              "type": "rich_text",
+              "textContent": "16. Enviar Respuesta al Huésped"
+            },
+            {
+              "key": "Número de reintentos|number",
+              "type": "number"
+            },
+            {
+              "key": "Tokens de entrada|number",
+              "type": "number"
+            },
+            {
+              "key": "Tokens de salida|number",
+              "type": "number"
+            },
+            {
+              "key": "Tokens totales|number",
+              "type": "number"
+            },
+            {
+              "key": "Costo IA estimado|number",
+              "type": "number"
+            },
+            {
+              "key": "Duración|number",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "eee662a6-5479-4c25-bcc6-d7f3402a0e97",
+      "name": "19. Registrar Ejecución Exitosa",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        4144,
+        112
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "305cd36d-966e-4f61-ab70-78f2534a82d6",
+          "mode": "list",
+          "cachedResultName": "Ejecuciones y Errores",
+          "cachedResultUrl": "https://app.notion.com/p/305cd36d966e4f61ab7078f2534a82d6"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "ID Ejecución|title",
+              "type": "title",
+              "title": "={{ 'ERR-' + $execution.id }}"
+            },
+            {
+              "key": "Estado de ejecución|select",
+              "type": "select",
+              "selectValue": "Error"
+            },
+            {
+              "key": "Etapa del workflow|select",
+              "type": "select",
+              "selectValue": "={{ $json.etapa }}"
+            },
+            {
+              "key": "Nodo|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $json.nodo }}"
+            },
+            {
+              "key": "Mensaje de error|rich_text",
+              "type": "rich_text",
+              "textContent": "={{ $json.mensaje }}"
+            },
+            {
+              "key": "Número de reintentos|number",
+              "type": "number",
+              "numberValue": 3
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fb6a83b0-11bc-49d7-a59b-0b929847cd6d",
+      "name": "E. Registrar Error",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        4416,
+        656
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionApi": {
+          "id": "wx2N32L0bCWtC32J",
+          "name": "Notion account 4"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Webhook Tally": {
+      "main": [
+        [
+          {
+            "node": "2. Validar y Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Validar y Normalizar": {
+      "main": [
+        [
+          {
+            "node": "3. ¿Datos Válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. ¿Datos Válidos?": {
+      "main": [
+        [
+          {
+            "node": "4. Buscar Huésped por Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Validación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Buscar Huésped por Email": {
+      "main": [
+        [
+          {
+            "node": "5. ¿Huésped Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E. Etapa Base de Datos": {
+      "main": [
+        [
+          {
+            "node": "E. Registrar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E. Etapa Validación": {
+      "main": [
+        [
+          {
+            "node": "E. Registrar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. ¿Huésped Existe?": {
+      "main": [
+        [
+          {
+            "node": "6a. Usar Huésped Existente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "6b. Crear Huésped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6a. Usar Huésped Existente": {
+      "main": [
+        [
+          {
+            "node": "7. Crear Reseña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6b. Crear Huésped": {
+      "main": [
+        [
+          {
+            "node": "6c. ID Huésped Nuevo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6c. ID Huésped Nuevo": {
+      "main": [
+        [
+          {
+            "node": "7. Crear Reseña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Crear Reseña": {
+      "main": [
+        [
+          {
+            "node": "8. Consultar Base de Conocimiento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. Consultar Base de Conocimiento": {
+      "main": [
+        [
+          {
+            "node": "9. Consolidar Contexto RAG",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E. Etapa RAG": {
+      "main": [
+        [
+          {
+            "node": "E. Registrar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. Consolidar Contexto RAG": {
+      "main": [
+        [
+          {
+            "node": "10. AI Agent - Analizar y Redactar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10. AI Agent - Analizar y Redactar": {
+      "main": [
+        [
+          {
+            "node": "11. Guardar Análisis y Borrador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "10. AI Agent - Analizar y Redactar",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Salida IA": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "10. AI Agent - Analizar y Redactar",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E. Etapa IA": {
+      "main": [
+        [
+          {
+            "node": "E. Registrar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11. Guardar Análisis y Borrador": {
+      "main": [
+        [
+          {
+            "node": "12. Notificar Revisor Interno",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "12. Notificar Revisor Interno": {
+      "main": [
+        [
+          {
+            "node": "13. Esperar Aprobación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E. Etapa Gmail": {
+      "main": [
+        [
+          {
+            "node": "E. Registrar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "13. Esperar Aprobación": {
+      "main": [
+        [
+          {
+            "node": "14. Consultar Estado Reseña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "14. Consultar Estado Reseña": {
+      "main": [
+        [
+          {
+            "node": "15. ¿Aprobado?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "15. ¿Aprobado?": {
+      "main": [
+        [
+          {
+            "node": "16. Enviar Respuesta al Huésped",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "17. ¿Límite de Chequeos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "16. Enviar Respuesta al Huésped": {
+      "main": [
+        [
+          {
+            "node": "18. Guardar Envío",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "17. ¿Límite de Chequeos?": {
+      "main": [
+        [
+          {
+            "node": "E. Etapa HITL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "13. Esperar Aprobación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E. Etapa HITL": {
+      "main": [
+        [
+          {
+            "node": "E. Registrar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "18. Guardar Envío": {
+      "main": [
+        [
+          {
+            "node": "19. Registrar Ejecución Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E. Etapa Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e4af4162-e777-442f-9651-be4dc6bc84db",
+  "meta": {
+    "instanceId": "a615e525520075a51db71cf7812d715c0751cb5051a724878079050f29c7674c"
+  },
+  "nodeGroups": [],
+  "id": "bMaFOaFq4FRM6Xr8",
+  "tags": []
+}
