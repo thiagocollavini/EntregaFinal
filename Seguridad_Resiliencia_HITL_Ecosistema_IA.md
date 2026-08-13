@@ -1,384 +1,163 @@
-# Seguridad, Resiliencia y Human-in-the-Loop
+# Seguridad, Privacidad, Resiliencia y Human-in-the-Loop
 
 ## Ecosistema IA de Gestión de Reseñas – Days Inn Parque Termal Dolores
 
 ## 1. Objetivo
 
-Este documento describe las medidas de seguridad, resiliencia y control humano incorporadas al workflow de n8n para reducir riesgos operativos, evitar envíos incorrectos y mantener trazabilidad sobre cada ejecución.
+Este documento describe los principales controles de seguridad, privacidad, resiliencia y supervisión humana implementados en el ecosistema de gestión de reseñas.
 
-La arquitectura combina validación de datos, rutas de error, reintentos automáticos, recuperación controlada de información mediante RAG y un punto obligatorio de aprobación humana antes de contactar al huésped.
+La arquitectura busca reducir cuatro riesgos principales:
 
----
+- Procesar datos incompletos o inválidos.
+- Generar respuestas con información no respaldada.
+- Contactar al huésped sin revisión humana.
+- Perder trazabilidad cuando una integración o etapa del workflow falla.
 
-## 2. Minimización y protección de datos
+Para ello, el sistema combina validación de entrada, recuperación de conocimiento mediante RAG, Human-in-the-Loop (HITL), reintentos en integraciones críticas, rutas de contingencia y registro centralizado de ejecuciones y errores.
 
-El sistema utiliza únicamente la información necesaria para procesar una reseña:
+## 2. Minimización de datos
 
-- Nombre del huésped.
-- Email.
-- Fecha de estadía.
-- Calificación.
-- Comentarios positivos.
-- Aspectos a mejorar.
-- Datos técnicos vinculados a la ejecución.
+El workflow limita los datos tratados a aquellos necesarios para gestionar la reseña y mantener la trazabilidad operativa.
 
-No se almacenan contraseñas, claves API ni credenciales dentro de las bases de Notion.
+Entre los principales datos utilizados se encuentran nombre del huésped, email, fecha de estadía, calificación, aspectos positivos, aspectos a mejorar e información técnica necesaria para identificar la reseña y su ejecución.
 
-Las credenciales de Notion, Gmail y Gemini se gestionan mediante el sistema de Credentials de n8n y no aparecen hardcodeadas dentro de los nodos del workflow.
+El email funciona como identificador lógico para buscar y reutilizar huéspedes existentes, evitando crear registros duplicados innecesarios.
 
-El email se utiliza como identificador lógico para evitar duplicar huéspedes. La información se separa entre las bases Huéspedes, Reseñas y Ejecuciones y Errores para evitar duplicación innecesaria de datos.
+La información se distribuye entre bases diferenciadas de Notion: Huéspedes, Reseñas, Base de Conocimiento y Ejecuciones y Errores. Las credenciales de los servicios externos no se almacenan como información de negocio dentro de estas bases.
 
----
+## 3. Validación de entrada
 
-## 3. Validación de datos de entrada
+El nodo **2. Validar y Normalizar** extrae y normaliza los datos recibidos desde Tally y verifica los campos requeridos. El resultado se utiliza en **3. ¿Datos Válidos?**.
 
-El nodo:
+Si los datos son válidos, el workflow continúa hacia la identificación del huésped y creación de la reseña. Si son inválidos, se desvía a **E. Etapa Validación → E. Registrar Error** y no continúa hacia la generación de respuesta ni hacia el contacto con el huésped.
 
-**2. Validar y Normalizar**
+## 4. Persistencia y trazabilidad
 
-comprueba la existencia de los campos obligatorios antes de continuar:
+Notion funciona como memoria persistente del ecosistema mediante cuatro bases:
 
-- Nombre.
-- Email.
-- Fecha de estadía.
-- Calificación.
-- Aspectos positivos.
+- **Huéspedes:** identificación y reutilización de huéspedes mediante email.
+- **Reseñas:** reseña original, análisis, borrador, aprobación y resultado final.
+- **Base de Conocimiento:** información autorizada para el AI Agent.
+- **Ejecuciones y Errores:** trazabilidad técnica de ejecuciones exitosas y fallidas.
 
-El resultado de la validación se almacena en la variable booleana:
+Esta separación permite reconstruir qué ocurrió durante el procesamiento de una reseña.
 
-`valido`
+## 5. RAG y control anti-alucinación
 
-El nodo:
+La secuencia **8. Consultar Base de Conocimiento → 9. Consolidar Contexto RAG → 10. AI Agent – Analizar y Redactar** recupera información autorizada desde Notion y la entrega al agente junto con la reseña.
 
-**3. ¿Datos Válidos?**
+Las instrucciones del agente establecen que la respuesta debe basarse exclusivamente en la información proporcionada por el huésped y el contenido disponible en la Base de Conocimiento. El modelo no debe inventar servicios, horarios, promociones, políticas, beneficios u otra información no respaldada.
 
-decide si el workflow puede continuar.
+Este mecanismo reduce el riesgo de alucinaciones, aunque no sustituye la supervisión humana posterior.
 
-### Camino válido
+## 6. Generación estructurada
 
-`valido = true`
+El AI Agent analiza la reseña y genera información estructurada, incluyendo sentimiento, urgencia y borrador de respuesta. Separar el análisis de la acción externa permite almacenar y revisar la salida antes de producir una comunicación real.
 
-El flujo continúa hacia la búsqueda o creación del huésped.
+## 7. Human-in-the-Loop obligatorio
 
-### Camino inválido
+Después de generar el borrador, **11. Guardar Análisis y Borrador** actualiza la reseña y la deja pendiente de revisión. **12. Notificar Revisor Interno** informa al responsable humano.
 
-`valido = false`
+Luego el workflow ejecuta:
 
-La ejecución se desvía hacia:
+**13. Esperar Aprobación → 14. Consultar Estado Reseña → 15. ¿Aprobado?**
 
-**E. Etapa Validación → E. Registrar Error**
+El envío al huésped solamente puede producirse cuando existe aprobación.
 
-El AI Agent no se ejecuta y no se contacta al huésped.
+### ¿Por qué el HITL está ubicado antes de Gmail?
 
-Esta segunda capa de validación protege al sistema incluso si el origen de datos cambia o un payload defectuoso alcanza directamente el webhook.
+Este punto representa la frontera entre un proceso interno y una acción externa. Hasta entonces la IA analiza y redacta, n8n procesa y Notion almacena. Gmail representa una comunicación con impacto directo sobre el huésped.
 
----
+Por eso la arquitectura sigue el principio:
 
-## 4. Resiliencia ante fallos de APIs
+**IA genera → humano revisa → sistema ejecuta.**
 
-Los nodos críticos de integración están configurados con:
+## 8. Comportamiento sin aprobación
 
-**Retry On Fail = true**
+Si **Aprobado = false**, el workflow no envía la respuesta. Continúa con el mecanismo de espera y comprobación definido para el HITL. La ausencia de intervención humana nunca se interpreta automáticamente como aprobación.
 
-y con rutas específicas de error.
+## 9. Protección contra bucles de aprobación
 
-Las etapas protegidas incluyen:
+Después de comprobar que la reseña todavía no fue aprobada, **17. ¿Límite de Chequeos?** evita una espera indefinida.
 
-- Notion / Base de datos.
-- Recuperación del contexto RAG.
-- AI Agent / Gemini.
-- Gmail.
-- HITL.
+Mientras no se alcance el límite, el proceso puede volver a **13. Esperar Aprobación**. Si se alcanza, se deriva hacia **E. Etapa HITL → E. Registrar Error** y finaliza sin contactar al huésped.
 
-Cuando una operación crítica falla, el flujo utiliza la salida de error y deriva hacia un nodo de clasificación de etapa.
+## 10. Resiliencia ante fallos
 
-Ejemplos:
+El workflow incorpora mecanismos de resiliencia en integraciones críticas relacionadas con Notion/Base de Datos, recuperación RAG, AI Agent/Gemini y Gmail.
 
+En los nodos donde está configurado, **Retry On Fail** permite reintentar operaciones ante determinados fallos transitorios.
+
+No se asume que todos los nodos utilizan la misma cantidad de reintentos; la configuración concreta depende de cada nodo. Si el problema persiste, las rutas de contingencia identifican la etapa afectada y registran el incidente.
+
+## 11. Rutas de contingencia
+
+El workflow diferencia errores mediante rutas como:
+
+- **E. Etapa Validación**
 - **E. Etapa Base de Datos**
 - **E. Etapa RAG**
 - **E. Etapa IA**
 - **E. Etapa Gmail**
 - **E. Etapa HITL**
 
-Todas estas rutas convergen en:
+Todas convergen en **E. Registrar Error**, facilitando localizar el origen del fallo.
 
-**E. Registrar Error**
+## 12. Registro centralizado de errores
 
----
+Los incidentes se registran en **Notion – Ejecuciones y Errores**. Entre los campos contemplados se encuentran ID de ejecución, estado, etapa, nodo, mensaje de error e información de reintentos cuando corresponde.
 
-## 5. Registro centralizado de errores
+El objetivo es evitar fallos silenciosos y mantener evidencia técnica de las interrupciones.
 
-La base de Notion **Ejecuciones y Errores** funciona como registro técnico del sistema.
+## 13. Seguridad del canal de salida
 
-Ante un fallo se almacena:
+La secuencia conceptual es:
 
-- ID Ejecución.
-- Estado de ejecución = Error.
-- Etapa del workflow.
-- Nodo relacionado.
-- Mensaje de error.
-- Número de reintentos.
+**RAG → AI Agent → Guardar Borrador → Revisión Humana → Aprobación → Gmail**
 
-Esto permite identificar rápidamente en qué componente ocurrió un problema y alimentar el Dashboard de Control.
+El AI Agent no dispone de una ruta directa hacia el huésped. Esta separación entre generación y ejecución reduce el riesgo de enviar automáticamente información inventada, respuestas inadecuadas o contenido generado con contexto insuficiente.
 
-La arquitectura permite distinguir errores de:
+## 14. Registro del camino exitoso
 
-- Validación.
-- Base de datos.
-- RAG.
-- Inteligencia Artificial.
-- Gmail.
-- HITL.
+Después del envío, el workflow continúa:
 
----
+**16. Enviar Respuesta al Huésped → 18. Guardar Envío → 19. Registrar Ejecución Exitosa**
 
-## 6. Human-in-the-Loop (HITL)
+Así se conserva el resultado final y se diferencia una ejecución exitosa de aquellas almacenadas mediante rutas de error.
 
-El sistema incorpora un punto obligatorio de supervisión humana antes de ejecutar la acción crítica de contactar al huésped.
+## 15. Camino feliz y camino infeliz
 
-Después de que el AI Agent genera el borrador, el nodo:
+### Camino feliz
 
-**11. Guardar Análisis y Borrador**
+**Tally → Webhook → Validación → Identificación/creación del huésped → Creación de reseña → RAG → AI Agent → Guardado del borrador → Revisión humana → Aprobación → Gmail → Actualización de la reseña → Registro exitoso**
 
-actualiza la reseña con:
+### Camino infeliz
 
-- Borrador IA.
-- Sentimiento IA.
-- Urgencia IA.
-- Requiere Revision = true.
-- Aprobado = false.
-- Estado = Pendiente de aprobación.
+**Datos inválidos / Base de Datos / RAG / IA / HITL / Gmail → identificación de etapa → E. Registrar Error → Notion – Ejecuciones y Errores**
 
-Posteriormente:
+Cuando un fallo impide completar de forma segura el proceso, el huésped no debe ser contactado.
 
-**12. Notificar Revisor Interno**
+## 16. Evidencias de prueba
 
-envía un email al responsable con:
+Durante la validación se probaron escenarios de reseñas positivas, negativas y mixtas; distinta urgencia; consultas respondibles y no respondibles desde la Base de Conocimiento; reutilización y creación de huéspedes; espera HITL sin aprobación; aprobación humana y posterior envío; y recorridos completos de extremo a extremo.
 
-- Nombre del huésped.
-- Calificación.
-- Reseña original.
-- Sentimiento.
-- Urgencia.
-- Borrador generado.
-- Enlace directo al registro en Notion.
+## 17. Riesgos residuales y mejoras futuras
 
-En este punto el AI Agent ya terminó su trabajo, pero el sistema todavía no puede contactar al huésped.
+Para una implementación productiva podrían incorporarse:
 
----
+- Registro más granular de reintentos reales.
+- Métricas automáticas de latencia, tokens y costo por ejecución.
+- Alertas ante tasas de error elevadas.
+- Políticas formales de retención y eliminación de datos.
+- Permisos más restrictivos según rol.
+- Mayor monitoreo de servicios externos.
+- Evolución del polling HITL hacia un mecanismo event-driven.
+- Revisión periódica de la Base de Conocimiento.
 
-## 7. Espera y validación humana
+## 18. Conclusión
 
-El nodo:
+La seguridad del ecosistema combina varias capas:
 
-**13. Esperar Aprobación**
+**Validación de entrada → Minimización de datos → Persistencia y trazabilidad → RAG anti-alucinación → Generación estructurada → Human-in-the-Loop → Control anti-bucle → Retry On Fail en integraciones críticas → Rutas de contingencia → Registro centralizado de ejecuciones y errores**
 
-detiene temporalmente la ejecución.
-
-Actualmente el intervalo está configurado en:
-
-**1 minuto**
-
-Luego:
-
-**14. Consultar Estado Reseña**
-
-vuelve a leer el registro en Notion.
-
-El nodo:
-
-**15. ¿Aprobado?**
-
-evalúa el checkbox `Aprobado`.
-
-### Si Aprobado = false
-
-El flujo no envía ningún email al huésped y pasa al control anti-bucle.
-
-### Si Aprobado = true
-
-El flujo continúa hacia:
-
-**16. Enviar Respuesta al Huésped**
-
-De esta manera, la decisión final queda exclusivamente en manos del operador humano.
-
----
-
-## 8. Protección contra bucles infinitos
-
-El workflow evita que el polling de aprobación continúe indefinidamente.
-
-El nodo:
-
-**17. ¿Límite de Chequeos?**
-
-evalúa el número de iteraciones mediante:
-
-`$runIndex >= 12`
-
-Si todavía no se alcanzó el límite, el workflow vuelve al nodo:
-
-**13. Esperar Aprobación**
-
-Si se alcanza el límite, la ejecución se desvía hacia:
-
-**E. Etapa HITL → E. Registrar Error**
-
-y el proceso finaliza sin contactar al huésped.
-
-Con el intervalo actual de un minuto, el diseño contempla aproximadamente hasta 12 comprobaciones antes del corte de seguridad.
-
----
-
-## 9. Control anti-alucinación mediante RAG
-
-El AI Agent recibe un contexto privado construido desde la Base de Conocimiento de Notion.
-
-La secuencia es:
-
-**8. Consultar Base de Conocimiento**
-→
-**9. Consolidar Contexto RAG**
-→
-**10. AI Agent - Analizar y Redactar**
-
-El prompt del agente establece que debe utilizar exclusivamente:
-
-- La reseña del huésped.
-- La Base de Conocimiento proporcionada.
-
-El modelo tiene prohibido inventar:
-
-- Servicios.
-- Horarios.
-- Promociones.
-- Políticas.
-- Beneficios.
-- Información del hotel no presente en las fuentes autorizadas.
-
-Durante las pruebas se validaron consultas sobre mascotas, traslados y beneficios inexistentes en el RAG. El agente evitó confirmar información no respaldada.
-
----
-
-## 10. Separación entre generación y acción
-
-Una decisión de seguridad central es separar:
-
-**Generar contenido**
-
-de:
-
-**Ejecutar una acción externa**
-
-El AI Agent nunca dispone de autonomía para enviar directamente la respuesta.
-
-La secuencia obligatoria es:
-
-**AI Agent**
-→
-**Guardar Borrador**
-→
-**Notificar Humano**
-→
-**Esperar**
-→
-**Aprobar**
-→
-**Gmail**
-
-Esta separación reduce el riesgo de que una respuesta incorrecta, una alucinación o un error de contexto llegue directamente al cliente.
-
----
-
-## 11. Seguridad del canal de salida
-
-La comunicación final se ejecuta mediante Gmail únicamente después de que:
-
-- La reseña fue validada.
-- El huésped fue identificado.
-- El RAG fue recuperado.
-- El AI Agent finalizó correctamente.
-- El borrador fue guardado.
-- El revisor humano aprobó el contenido.
-
-Después del envío, el workflow almacena:
-
-- Respuesta final.
-- Gmail Thread ID.
-- Fecha de envío.
-- Estado = Enviado.
-
-Esto mantiene trazabilidad entre la reseña, la aprobación humana y la comunicación efectivamente realizada.
-
----
-
-## 12. Camino infeliz
-
-El sistema contempla explícitamente situaciones donde el flujo no debe avanzar.
-
-Entre ellas:
-
-### Datos incompletos
-Se registra error y no se procesa con IA.
-
-### Error de Notion
-Se aplican reintentos y, si persiste, se registra el incidente.
-
-### Error de RAG
-No se permite continuar hacia generación o envío si el contexto no puede recuperarse correctamente.
-
-### Error de IA
-No existe borrador válido y no se contacta al huésped.
-
-### Falta de aprobación
-El flujo continúa esperando y no envía nada.
-
-### Límite HITL alcanzado
-La ejecución se detiene y registra el incidente.
-
-### Error de Gmail
-Se registra la falla y no se considera la ejecución como exitosa.
-
----
-
-## 13. Evidencias obtenidas durante las pruebas
-
-El workflow fue probado con múltiples escenarios:
-
-- Reseña de 5 estrellas.
-- Reseña positiva con consulta respondible desde el RAG.
-- Reseña negativa.
-- Reseña crítica clasificada con urgencia Alta.
-- Consulta con información inexistente en el RAG.
-- Experiencia mixta.
-- Reutilización de huésped existente mediante email.
-- Creación de huésped nuevo.
-- Ciclos HITL sin aprobación.
-- Aprobación posterior y envío exitoso.
-
-Estas pruebas permitieron comprobar tanto el camino feliz como distintas rutas de control y seguridad.
-
----
-
-## 14. Riesgos residuales y mejoras futuras
-
-Aunque el prototipo incorpora múltiples controles, existen mejoras posibles:
-
-- Registrar dinámicamente el número real de reintentos.
-- Registrar consumo real de tokens.
-- Calcular costo de IA por ejecución.
-- Incorporar alertas automáticas ante tasas de error elevadas.
-- Añadir roles o permisos más restrictivos para la aprobación humana.
-- En producción, ampliar los controles de privacidad y retención de datos personales.
-- Sustituir o complementar el polling HITL por un mecanismo event-driven si el entorno lo permite.
-
----
-
-## 15. Conclusión
-
-La arquitectura implementada evita que el ecosistema dependa únicamente de la salida de un modelo de Inteligencia Artificial.
-
-La validación inicial, las rutas de error, los reintentos, el RAG, la protección anti-bucle y el Human-in-the-Loop crean una serie de barreras de control antes de que cualquier comunicación llegue al huésped.
-
-De esta manera, el sistema combina automatización y autonomía operativa con supervisión humana, trazabilidad y mecanismos de recuperación ante fallos.
+La decisión arquitectónica principal es mantener separadas la generación de contenido y la acción externa. El AI Agent puede analizar y redactar, pero la comunicación con el huésped queda condicionada a una aprobación humana previa.
